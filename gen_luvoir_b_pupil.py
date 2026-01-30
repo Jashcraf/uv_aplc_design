@@ -29,11 +29,15 @@ exclude = [
 if __name__ == "__main__":
     
     if len(sys.argv) > 1:
-        N_SAMPLES = sys.argv[1]
+        N_SAMPLES = float(sys.argv[1])
     else:
         N_SAMPLES = 1024
 
+    dx = CIRCUMSCRIBED_DIAMETER / N_SAMPLES
+
     x, y = make_xy_grid(N_SAMPLES, diameter=CIRCUMSCRIBED_DIAMETER)
+    x += dx / 2
+    y += dx / 2
     cha = CompositeHexagonalAperture(x, y, N_RINGS, FLAT_TO_FLAT, GAP_SIZE, exclude=exclude)
 
     if PLOT_PUPIL:
@@ -47,4 +51,4 @@ if __name__ == "__main__":
         plt.show()
 
     hdu = fits.PrimaryHDU(cha.amp.astype(np.float64))
-    hdu.writeto(f"luvoir_b_pupil_{N_SAMPLES}px.fits")
+    hdu.writeto(f"luvoir_b_pupil_{N_SAMPLES}_shift_px_py.fits")
