@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 
+# Cheating to solve for nearest radius
+from scipy.optimize import minimize_scalar
+
 try:
     from prysm.coordinates import make_xy_grid, cart_to_polar
     from prysm.geometry import spider, circle, offset_circle
@@ -12,11 +15,11 @@ except ImportError as e:
 
 """LUVOIR-B Parameters
 """
-PERCENT_DEGRADATION = 0
+EQUIV_LS_RADIUS = 0.8
 PLOT_PUPIL = True
 SAVE_PUPIL = False
 CIRCUMSCRIBED_DIAMETER = 7.994 # * (1 - PERCENT_DEGRADATION/100) 
-FLAT_TO_FLAT = 0.955 * (1 - PERCENT_DEGRADATION/100)
+FLAT_TO_FLAT = 0.955 #* (1 - PERCENT_DEGRADATION/100)
 GAP_SIZE = 0.000
 N_RINGS = 4
 exclude = [
@@ -35,17 +38,46 @@ if __name__ == "__main__":
     else:
         N_SAMPLES = 1024
 
-
+    circular_ls_radius = EQUIV_LS_RADIUS * CIRCUMSCRIBED_DIAMETER
     dx = CIRCUMSCRIBED_DIAMETER / N_SAMPLES
 
     x, y = make_xy_grid(N_SAMPLES, diameter=CIRCUMSCRIBED_DIAMETER)
     x += dx / 2
     y += dx / 2
-    cha = CompositeHexagonalAperture(x, y, N_RINGS, FLAT_TO_FLAT, GAP_SIZE, exclude=exclude)
+    r, t = cart_to_polar(x, y)
+    circular = circle(circular_ls_radius / 2, r).astype(np.float32)
+
+
+    def loss(pct):
+        """minimization of throughput difference
+
+        Parameters
+        ----------
+        x : float
+            percent degradation of the aperture edge
+
+        Returns
+        -------
+        float:
+            MSE of throughput between circular (fixed) and segmented (variable)
+        """
+
+        flat_to_flat = FLAT_TO_FLAT * (1 - pct/100)
+        cha = CompositeHexagonalAperture(x, y, N_RINGS, flat_to_flat, GAP_SIZE, exclude=exclude)
+        aperture = cha.amp.astype(np.float32)
+        squared_err = (np.sum(circular) - np.sum(aperture))**2
+
+        return squared_err
+    
+    # Nelder-Mead because this very rarely matters
+    results = minimize_scalar(loss)
+    PERCENT_DEGRADATION = results.x
+    flat_to_flat = FLAT_TO_FLAT * (1 - PERCENT_DEGRADATION/100)
+    cha = CompositeHexagonalAperture(x, y, N_RINGS, flat_to_flat, GAP_SIZE, exclude=exclude)
 
     if PLOT_PUPIL:
         fig, ax = plt.subplots(figsize=(10,10))
-        plt.title(f"LUVOIR-B Lyot Stop with Segment Index - {PERCENT_DEGRADATION}% Degradation")
+        plt.title(f"LUVOIR-B Lyot Stop with Segment Index - {PERCENT_DEGRADATION:.3f}% Degradation")
         ax.imshow(cha.amp, origin='lower', cmap='gray', extent=[x.min(), x.max(), y.min(), y.max()])
         for center, id_ in zip(cha.all_centers, cha.segment_ids):
             plt.text(*center, id_)
